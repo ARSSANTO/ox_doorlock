@@ -188,6 +188,17 @@ function DoesPlayerHaveItem(player, items, alwaysRemove)
 end
 
 local function isAuthorised(playerId, door, lockpick)
+	if Config.PlayerAceAuthorised then
+		return IsPlayerAceAllowed(playerId, 'command.doorlock')
+	end
+
+	-- e.g. add_ace group.police "doorlock.mrpd locker rooms" allow
+	-- add_principal fivem:123456 group.police
+	-- or add_ace identifier.fivem:123456 "doorlock.mrpd locker rooms" allow
+	if IsPlayerAceAllowed(playerId, ('doorlock.%s'):format(door.name)) then
+		return true
+	end
+
 	local player = GetPlayer(playerId)
 	local authorised = door.passcode or false --[[@as boolean | string | nil]]
 
@@ -213,17 +224,6 @@ local function isAuthorised(playerId, door, lockpick)
 		end
 	end
 
-	if not authorised and Config.PlayerAceAuthorised then
-		authorised = IsPlayerAceAllowed(playerId, 'command.doorlock')
-	end
-
-	-- e.g. add_ace group.police "doorlock.mrpd locker rooms" allow
-	-- add_principal fivem:123456 group.police
-	-- or add_ace identifier.fivem:123456 "doorlock.mrpd locker rooms" allow
-	if not authorised and IsPlayerAceAllowed(playerId, ('doorlock.%s'):format(door.name)) then
-		authorised = true
-	end
-
 	return authorised
 end
 
@@ -242,7 +242,11 @@ MySQL.ready(function()
 	isLoaded = true
 end)
 
-RegisterNetEvent('ox_doorlock:setState', function(id, state, lockpick)
+---@param id number
+---@param state 0 | 1 | boolean
+---@param lockpick? boolean
+---@return boolean
+local function setDoorState(id, state, lockpick)
 	local door = doors[id]
 
 	state = (state == 1 or state == 0) and state or (state and 1 or 0)
@@ -265,19 +269,26 @@ RegisterNetEvent('ox_doorlock:setState', function(id, state, lockpick)
 				end)
 			end
 
-			return TriggerEvent('ox_doorlock:stateChanged', source, door.id, state == 1, type(authorised) == 'string' and authorised)
+			TriggerEvent('ox_doorlock:stateChanged', source, door.id, state == 1, type(authorised) == 'string' and authorised)
+
+			return true
 		end
 
 		if source then
 			lib.notify(source, { type = 'error', icon = 'lock', description = state == 0 and 'cannot_unlock' or 'cannot_lock' })
 		end
 	end
-end)
 
-RegisterNetEvent('ox_doorlock:getDoors', function()
-	local source = source
+	return false
+end
+
+RegisterNetEvent('ox_doorlock:setState', setDoorState)
+exports('setDoorState', setDoorState)
+
+lib.callback.register('ox_doorlock:getDoors', function()
 	while not isLoaded do Wait(100) end
-	TriggerClientEvent('ox_doorlock:setDoors', source, doors, sounds)
+
+	return doors, sounds
 end)
 
 RegisterNetEvent('ox_doorlock:editDoorlock', function(id, data)
